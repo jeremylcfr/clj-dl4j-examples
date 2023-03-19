@@ -10,6 +10,8 @@
 
            [org.nd4j.linalg.api.ndarray INDArray]
 
+           ;; [java.awt Window]
+           [javax.swing JFrame JPanel WindowConstants]
 
            [org.jfree.chart ChartFactory ChartPanel JFreeChart]
            [org.jfree.chart.axis NumberAxis]
@@ -84,8 +86,32 @@
    (let [nb-rows (aget (nda/get-shape features) 2)
          series (XYSeries. plot-name)]
      (doseq [i (range nb-rows)]
-       (.add ^XYSeries series ^int (int (+ offset i))))
+       (.add ^XYSeries series ^int (int (+ offset i)) ^double (.getDouble features ^int i)))
      series-collection)))
+
+(defn plot!
+  [^XYSeriesCollection dataset]
+  (let [chart (ChartFactory/createXYLineChart 
+               "Regression example"
+               "Timestep"
+               "Number of passengers"
+               ^XYSeriesCollection dataset
+               PlotOrientation/VERTICAL
+               true
+               false
+               false)
+        plot (.getXYPlot ^JFreeChart chart)
+        range-axis (doto (.getRangeAxis ^XYPlot plot)
+                         (.setAutoRange true))
+        panel (ChartPanel. ^JFreeChart chart)
+        frame (doto (JFrame.)
+                    (.add ^JPanel panel)
+                    (.setDefaultCloseOperation ^WindowConstants WindowConstants/EXIT_ON_CLOSE)
+                    (.pack)
+                    (.setTitle "Training Data"))]
+    (RefineryUtilities/centerFrameOnScreen frame)
+    (.setVisible frame true)))
+
 
 
 (defn run!
@@ -103,13 +129,31 @@
         test-features (.getFeatures test-dataset)
         test-labels (.getLabels test-dataset)
 
+        train-features (.getFeatures train-dataset)
+        train-labels   (.getLabels train-dataset) 
+
         network (core/multi-layer-network network-configuration)]
     (dotimes [k 300]
       (.fit network train-dataset)
       (let [evaluation (RegressionEvaluation. 1)
             predicted (.output network test-features, false)]
         (.evalTimeSeries evaluation test-labels predicted)
-        (println (.stats evaluation))))))
+        (println (.stats evaluation))))
+    (.rnnTimeStep network train-features)
+    (let [predicted (.rnnTimeStep network test-features)
+          
+          _ (.revert normalizer train-dataset)
+          _ (.revert normalizer test-dataset)
+          _ (.revertLabels normalizer predicted)
+
+          train-features (.getFeatures train-dataset)
+          test-features  (.getFeatures test-dataset)
+
+          xy-series (XYSeriesCollection.)]
+      (create-plot-series train-features   0 "Train data" xy-series)
+      (create-plot-series  test-features  99 "Actual test data" xy-series)
+      (create-plot-series      predicted 100 "Predicted test data" xy-series)
+      (plot! xy-series))))
 
 
 
